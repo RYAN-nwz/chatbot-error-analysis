@@ -2297,8 +2297,13 @@
                             console.warn(`${gameId} CSV 파싱 경고:`, results.errors);
                         }
                         if (results.data && results.data.length > 0) {
+                            console.log(`${gameId} CSV 파싱 성공: ${results.data.length}개 행`);
+                            console.log(`${gameId} 첫 번째 행:`, results.data[0]);
+                            console.log(`${gameId} 컬럼명:`, Object.keys(results.data[0]));
                             processFileData(gameId, results.data);
                             console.log(`${gameId} CSV 파일 로드 완료: ${results.data.length}개 행`);
+                        } else {
+                            console.error(`${gameId} CSV 파싱 결과: 데이터가 없습니다`);
                         }
                     },
                     error: function(error) {
@@ -2332,29 +2337,44 @@
             const gameIds = ['newmago', 'sutda', 'poker', 'newvegas', 'showdown', 'pc-integrated'];
             const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) || '';
             
-            // LocalStorage에 데이터가 없으면 GitHub에서 CSV 로드 시도
-            let hasLocalData = false;
-            Object.keys(gameData).forEach(gameId => {
-                if (gameData[gameId] && gameData[gameId].length > 0) {
-                    hasLocalData = true;
-                }
-            });
-            
-            // LocalStorage에 데이터가 없고, GitHub Pages 환경이면 CSV 자동 로드 시도
-            if (!hasLocalData && (window.location.hostname === 'github.io' || window.location.hostname.includes('github'))) {
+            // GitHub Pages 환경이면 항상 CSV 파일 로드 시도 (LocalStorage보다 우선)
+            if (window.location.hostname === 'github.io' || window.location.hostname.includes('github')) {
                 console.log('GitHub Pages 환경에서 CSV 파일 자동 로드 시도...');
-                gameIds.forEach(gameId => {
-                    const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
-                    // CSV 파일이 index.html과 같은 루트 디렉토리에 있음
-                    const csvPath = `${basePath}/${csvFileName}`;
-                    loadCSVFromGitHub(gameId, csvPath);
+                
+                // LocalStorage 데이터 검증 (질문/답변이 있는지 확인)
+                let hasValidData = false;
+                Object.keys(gameData).forEach(gameId => {
+                    if (gameData[gameId] && gameData[gameId].length > 0) {
+                        // 첫 번째 행에 질문이나 답변이 있는지 확인
+                        const firstRow = gameData[gameId][0];
+                        const hasQuestion = firstRow['Question'] && firstRow['Question'].trim() !== '';
+                        const hasAnswer = firstRow['QuestionAnswer'] && firstRow['QuestionAnswer'].trim() !== '';
+                        if (!hasQuestion && !hasAnswer) {
+                            console.log(`${gameId}: LocalStorage 데이터에 질문/답변이 없어서 CSV 재로드`);
+                            gameData[gameId] = null; // 잘못된 데이터 제거
+                        } else {
+                            hasValidData = true;
+                        }
+                    }
                 });
+                
+                // 유효한 데이터가 없거나, GitHub Pages 환경이면 CSV 로드
+                if (!hasValidData) {
+                    gameIds.forEach(gameId => {
+                        const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
+                        // CSV 파일이 index.html과 같은 루트 디렉토리에 있음
+                        const csvPath = `${basePath}/${csvFileName}`;
+                        console.log(`CSV 로드 시도: ${csvPath}`);
+                        loadCSVFromGitHub(gameId, csvPath);
+                    });
+                }
             }
             
             // 대시보드 업데이트 (데이터 복원 후 자동으로 호출되지만 안전을 위해)
+            // CSV 로드 대기 시간을 늘림 (GitHub Pages에서 파일 로드 시간 고려)
             setTimeout(() => {
                 updateDashboard();
-            }, 500); // CSV 로드 대기 시간
+            }, 2000); // CSV 로드 대기 시간 (2초)
 
             // 모달 닫기 버튼 이벤트
             const closeBtn = document.querySelector('.modal-close');

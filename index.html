@@ -2345,7 +2345,8 @@
                 console.log('GitHub Pages 환경에서 CSV 파일 자동 로드 시도...');
                 gameIds.forEach(gameId => {
                     const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
-                    const csvPath = `${basePath}/data/${csvFileName}`;
+                    // CSV 파일이 index.html과 같은 루트 디렉토리에 있음
+                    const csvPath = `${basePath}/${csvFileName}`;
                     loadCSVFromGitHub(gameId, csvPath);
                 });
             }

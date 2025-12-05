@@ -1,0 +1,2366 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 챗봇 자연어 오답률 분석 대시보드</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        // ChartDataLabels 플러그인 전역 등록 확인
+        if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+        }
+
+        .main-content {
+            margin-left: 320px;
+        }
+
+        .sidebar {
+            position: fixed;
+            left: 20px;
+            top: 20px;
+            width: 280px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            z-index: 200;
+            scrollbar-width: thin;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: rgba(102, 126, 234, 0.3);
+            border-radius: 10px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb:hover {
+            background: rgba(102, 126, 234, 0.5);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 40px;
+            border-radius: 20px;
+            margin-bottom: 40px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.95;
+        }
+
+        .sidebar-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-panel h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .game-tabs {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .game-tabs li {
+            margin-bottom: 8px;
+        }
+
+        .game-tabs a {
+            color: #555;
+            text-decoration: none;
+            padding: 12px 15px;
+            display: block;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+            border-left: 3px solid transparent;
+        }
+
+        .game-tabs a:hover {
+            background: #f8f9fa;
+            color: #667eea;
+            border-left-color: #667eea;
+        }
+
+        .game-tabs a.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-left-color: #667eea;
+        }
+
+        .section {
+            background: white;
+            padding: 40px 50px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .section h2 {
+            color: #667eea;
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .metric-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .metric-card .number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .game-metric-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .game-metric-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .game-metric-card:hover {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .game-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .game-metric-row {
+            display: flex;
+            justify-content: space-around;
+            gap: 10px;
+        }
+
+        .game-metric-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        .game-label {
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .game-number {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .metric-card .label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        /* 모달 스타일 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 0;
+            border: none;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 900px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 20px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .modal-close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .modal-close:hover,
+        .modal-close:focus {
+            opacity: 0.7;
+        }
+
+        .modal-body {
+            padding: 20px 30px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .error-item-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.3s;
+        }
+
+        .error-item-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+
+        .error-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .error-item-number {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 0.9rem;
+        }
+
+        .error-item-category {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .error-item-question {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .error-item-answer {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+
+        .error-item-date {
+            font-size: 0.85rem;
+            color: #999;
+        }
+
+        .chart-container {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 12px;
+            margin: 20px 0;
+            position: relative;
+            height: 400px;
+        }
+
+        .upload-section {
+            background: #e8f4f8;
+            border-left: 4px solid #667eea;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .upload-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 15px 20px;
+            background: white;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            background: #f8f9fa;
+            border-color: #764ba2;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .data-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-badge.correct {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .error-type-select {
+            padding: 6px 12px;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            width: 100%;
+        }
+
+        @media (max-width: 1400px) {
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .sidebar {
+                position: relative;
+                left: auto;
+                top: auto;
+                width: 100%;
+                max-height: none;
+                margin-bottom: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 사이드바 -->
+        <div class="sidebar">
+            <div class="sidebar-panel">
+                <h3>🎮 게임 선택</h3>
+                <ul class="game-tabs">
+                    <li><a href="#" class="tab-link" data-tab="overview">📋 문서 개요</a></li>
+                    <li><a href="#" class="tab-link active" data-tab="dashboard">📊 대시보드</a></li>
+                    <li><a href="#" class="tab-link" data-tab="newmago">뉴맞고</a></li>
+                    <li><a href="#" class="tab-link" data-tab="sutda">섯다</a></li>
+                    <li><a href="#" class="tab-link" data-tab="poker">포커</a></li>
+                    <li><a href="#" class="tab-link" data-tab="newvegas">뉴베가스</a></li>
+                    <li><a href="#" class="tab-link" data-tab="showdown">쇼다운홀덤</a></li>
+                    <li><a href="#" class="tab-link" data-tab="pc-integrated">PC 통합 챗봇</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 메인 컨텐츠 -->
+        <div class="main-content">
+            <div class="header">
+                <h1>🤖 챗봇 자연어 오답률 분석 대시보드</h1>
+                <p>게임별 챗봇 오답률 통계 및 분석</p>
+            </div>
+
+            <!-- 문서 개요 섹션 -->
+            <section id="overview" class="section">
+                <h2>📋 문서 개요</h2>
+                
+                <div class="document-overview" style="background: white; padding: 25px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div>
+                            <strong style="color: #764ba2;">작성자</strong>
+                            <p style="margin: 5px 0; color: #555;">이재찬(고객지원팀)</p>
+                        </div>
+                        <div>
+                            <strong style="color: #764ba2;">작성일시</strong>
+                            <p style="margin: 5px 0; color: #555;">2025. 11. 27.</p>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <strong style="color: #764ba2; display: block; margin-bottom: 8px;">목적</strong>
+                        <p style="color: #555; line-height: 1.8; margin: 0;">
+                            뉴맞고, 섯다, 포커, 뉴베가스, 쇼다운홀덤, PC 통합 챗봇 등 6개 게임의 챗봇 자연어 질문-답변 데이터를 CSV 파일로 업로드하여, 
+                            정답 여부(O/X) 및 분류 유형을 수동으로 평가하고, 전체 오답률 및 오답 유형별 확률을 자동으로 계산하는 대시보드를 제공함.
+                            <br><br>
+                            기존 구글 스프레드시트 수동 분석 방식을 대체하여, 데이터 업로드 즉시 통계 분석 및 시각화를 제공하고, 
+                            LocalStorage를 통한 데이터 자동 저장으로 새로고침 후에도 평가 데이터가 유지되도록 함.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <strong style="color: #764ba2; display: block; margin-bottom: 8px;">평가 기준 및 분류 체계</strong>
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                            <div style="margin-bottom: 20px;">
+                                <h4 style="color: #28a745; margin-bottom: 10px; font-size: 1.1rem;">✅ 정답 (Pass)</h4>
+                                <ul style="color: #555; line-height: 1.8; margin: 0; padding-left: 20px;">
+                                    <li><strong>정상 답변:</strong> 답변이 정확하고 적절함</li>
+                                    <li><strong>데이터 부족 (정상):</strong> 모르는 것을 모른다고 정확히 답변함</li>
+                                    <li><strong>게임 외 질문 (정상):</strong> 일상 대화 등에 적절히 대응함</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 style="color: #dc3545; margin-bottom: 10px; font-size: 1.1rem;">❌ 오답 (Fail)</h4>
+                                <ul style="color: #555; line-height: 1.8; margin: 0; padding-left: 20px;">
+                                    <li><strong>사실 관계 오류:</strong> 없는 기능을 있다고 하거나 틀린 정보 제공 (예: 광고 제거 가능하다고 잘못 답변)</li>
+                                    <li><strong>의도 파악 실패:</strong> A를 물었는데 B에 대해 답변 (예: 탈퇴 문의 → 결제 안내)</li>
+                                    <li><strong>동문서답/TMI:</strong> 불필요한 정보 나열, 질문 핵심과 무관한 내용</li>
+                                    <li><strong>답변 불완전:</strong> 구체적이지 않고 모호한 답변</li>
+                                    <li><strong>기타:</strong> 위 항목에 해당하지 않는 오답</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <strong style="color: #764ba2; display: block; margin-bottom: 8px;">효과</strong>
+                        <ul style="color: #555; line-height: 1.8; margin: 0; padding-left: 20px;">
+                            <li><strong>분석 효율성 향상:</strong> CSV 파일 업로드 즉시 질문-답변 데이터를 테이블로 표시하고, 정답 여부 체크 및 오답 유형 분류를 직관적으로 수행 가능.</li>
+                            <li><strong>실시간 통계 계산:</strong> 정답 여부(O/X) 입력 시 자동으로 오답률, 오답 유형별 확률을 계산하여 즉시 확인 가능.</li>
+                            <li><strong>데이터 영구 보존:</strong> LocalStorage를 통한 자동 저장으로 브라우저 새로고침 후에도 평가 데이터 및 통계가 유지됨.</li>
+                            <li><strong>게임별 분리 관리:</strong> 6개 게임별로 독립적인 탭을 제공하여 게임별 오답률을 개별적으로 분석 및 비교 가능.</li>
+                            <li><strong>시각화 제공:</strong> 일자별/월별 오답률 추이, 게임별 오답률 비교, 오답 유형별 분포 차트를 통한 직관적인 데이터 분석.</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <strong style="color: #764ba2; display: block; margin-bottom: 8px;">주요 작업 내역</strong>
+                        <ul style="color: #555; line-height: 1.8; margin: 0; padding-left: 20px;">
+                            <li>CSV/엑셀 파일 업로드 기능 구현 (PapaParse, SheetJS 라이브러리 활용)</li>
+                            <li>게임별 데이터 탭 분리 (뉴맞고, 섯다, 포커, 뉴베가스, 쇼다운홀덤, PC 통합 챗봇)</li>
+                            <li>정답 여부(O/X) 드롭다운 선택 기능 및 오답 유형 분류 기능 구현</li>
+                            <li>실시간 오답률 계산 및 통계 표시 (질문 수, 오답 수, 오답률)</li>
+                            <li>LocalStorage를 통한 데이터 자동 저장 및 복원 기능</li>
+                            <li>날짜 형식 변환 (AnswerTime → YYMMDD 형식)</li>
+                            <li>대시보드 통합 통계 및 차트 시각화 (Chart.js 활용)</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <strong style="color: #764ba2; display: block; margin-bottom: 8px;">현재 상태 및 다음 단계</strong>
+                        <ul style="color: #555; line-height: 1.8; margin: 0; padding-left: 20px;">
+                            <li><strong>현재 상태:</strong> CSV/엑셀 파일 업로드, 정답 여부 평가, 오답 유형 분류, 기본 통계 계산 기능 완료</li>
+                            <li><strong>다음 단계:</strong> 일자별/월별 오답률 추이 차트 개선, 데이터 내보내기 기능(CSV/Excel), 필터링/검색 기능 추가</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <strong style="color: #764ba2; display: block; margin-bottom: 15px;">💡 개선 효과</strong>
+                        <table style="width: 100%; border-collapse: collapse; background: #f8f9fa; border-radius: 8px; overflow: hidden;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                    <th style="padding: 12px; text-align: left; font-weight: 600;">항목</th>
+                                    <th style="padding: 12px; text-align: left; font-weight: 600;">기존 방식 (수작업)</th>
+                                    <th style="padding: 12px; text-align: left; font-weight: 600;">자동화 시스템</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="border-bottom: 1px solid #e9ecef;">
+                                    <td style="padding: 12px; font-weight: 600; color: #667eea;">데이터 업로드</td>
+                                    <td style="padding: 12px; color: #555;">구글 스프레드시트에 수동 복사/붙여넣기</td>
+                                    <td style="padding: 12px; color: #28a745; font-weight: 600;">CSV/엑셀 파일 드래그 앤 드롭으로 즉시 업로드</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #e9ecef; background: white;">
+                                    <td style="padding: 12px; font-weight: 600; color: #667eea;">정답 여부 평가</td>
+                                    <td style="padding: 12px; color: #555;">수동으로 O/X 입력 (오타 위험)</td>
+                                    <td style="padding: 12px; color: #28a745; font-weight: 600;">드롭다운 선택으로 오타 방지</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #e9ecef;">
+                                    <td style="padding: 12px; font-weight: 600; color: #667eea;">오답률 계산</td>
+                                    <td style="padding: 12px; color: #555;">수식 수동 입력 및 검수 필요</td>
+                                    <td style="padding: 12px; color: #28a745; font-weight: 600;">실시간 자동 계산 및 표시</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #e9ecef; background: white;">
+                                    <td style="padding: 12px; font-weight: 600; color: #667eea;">데이터 보존</td>
+                                    <td style="padding: 12px; color: #555;">새로고침 시 데이터 손실</td>
+                                    <td style="padding: 12px; color: #28a745; font-weight: 600;">LocalStorage 자동 저장으로 영구 보존</td>
+                                </tr>
+                                <tr style="background: white;">
+                                    <td style="padding: 12px; font-weight: 600; color: #667eea;">소요 시간</td>
+                                    <td style="padding: 12px; color: #555;">파일 준비 + 수식 입력 + 검수: 10~30분</td>
+                                    <td style="padding: 12px; color: #28a745; font-weight: 600;">파일 업로드: 1초 내 완료</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 대시보드 섹션 -->
+            <section id="dashboard" class="section active">
+                <h2>📊 전체 오답률 대시보드</h2>
+                
+                <div class="metric-cards">
+                    <div class="metric-card">
+                        <div class="label">전체 오답률</div>
+                        <div class="number" id="overall-error-rate">-</div>
+                        <div class="label">전체 질문 대비</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">총 질문 수</div>
+                        <div class="number" id="total-questions">-</div>
+                        <div class="label">누적 질문</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">총 오답 수</div>
+                        <div class="number" id="total-errors">-</div>
+                        <div class="label">오답 발생</div>
+                    </div>
+                </div>
+
+                <h3 style="color: #764ba2; margin: 30px 0 15px 0;">🎮 게임별 통계</h3>
+                <div class="game-metric-cards">
+                    <div class="game-metric-card" data-game-id="newmago" onclick="showErrorItems('newmago', '🎴 뉴맞고')">
+                        <div class="game-name">🎴 뉴맞고</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-newmago-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-newmago-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-newmago-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-metric-card" data-game-id="sutda" onclick="showErrorItems('sutda', '🃏 섯다')">
+                        <div class="game-name">🃏 섯다</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-sutda-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-sutda-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-sutda-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-metric-card" data-game-id="poker" onclick="showErrorItems('poker', '🂡 포커')">
+                        <div class="game-name">🂡 포커</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-poker-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-poker-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-poker-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-metric-card" data-game-id="newvegas" onclick="showErrorItems('newvegas', '🎰 뉴베가스')">
+                        <div class="game-name">🎰 뉴베가스</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-newvegas-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-newvegas-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-newvegas-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-metric-card" data-game-id="showdown" onclick="showErrorItems('showdown', '🎯 쇼다운홀덤')">
+                        <div class="game-name">🎯 쇼다운홀덤</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-showdown-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-showdown-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-showdown-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-metric-card" data-game-id="pc-integrated" onclick="showErrorItems('pc-integrated', '💻 PC 통합 챗봇')">
+                        <div class="game-name">💻 PC 통합 챗봇</div>
+                        <div class="game-metric-row">
+                            <div class="game-metric-item">
+                                <div class="game-label">오답률</div>
+                                <div class="game-number" id="game-pc-integrated-error-rate">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">질문 수</div>
+                                <div class="game-number" id="game-pc-integrated-total">-</div>
+                            </div>
+                            <div class="game-metric-item">
+                                <div class="game-label">오답 수</div>
+                                <div class="game-number" id="game-pc-integrated-errors">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 style="color: #764ba2; margin: 30px 0 15px 0;">📅 월별 오답률 추이</h3>
+                <div class="chart-container">
+                    <canvas id="monthly-chart"></canvas>
+                </div>
+
+                <h3 style="color: #764ba2; margin: 30px 0 15px 0;">📊 오답 유형별 분포</h3>
+                <div class="chart-container">
+                    <canvas id="error-type-chart"></canvas>
+                </div>
+
+                <h3 style="color: #764ba2; margin: 30px 0 15px 0;">🎮 게임별 오답률 비교</h3>
+                <div class="chart-container">
+                    <canvas id="game-comparison-chart"></canvas>
+                </div>
+
+                <h3 style="color: #764ba2; margin: 30px 0 15px 0;">📈 일자별 오답률 추이</h3>
+                <div class="chart-container">
+                    <canvas id="daily-chart"></canvas>
+                </div>
+            </section>
+
+            <!-- 게임별 섹션들 -->
+            <section id="newmago" class="section">
+                <h2>🎴 뉴맞고 오답률 분석</h2>
+                <div id="newmago-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="newmago-file" accept=".csv" onchange="handleFileUpload('newmago', this)">
+                            <label for="newmago-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="newmago-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="newmago-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="newmago-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="newmago-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="newmago-table-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="sutda" class="section">
+                <h2>🃏 섯다 오답률 분석</h2>
+                <div id="sutda-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="sutda-file" accept=".csv" onchange="handleFileUpload('sutda', this)">
+                            <label for="sutda-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="sutda-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="sutda-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="sutda-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="sutda-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="sutda-table-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="poker" class="section">
+                <h2>🃏 포커 오답률 분석</h2>
+                <div id="poker-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="poker-file" accept=".csv" onchange="handleFileUpload('poker', this)">
+                            <label for="poker-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="poker-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="poker-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="poker-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="poker-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="poker-table-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="newvegas" class="section">
+                <h2>🎰 뉴베가스 오답률 분석</h2>
+                <div id="newvegas-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="newvegas-file" accept=".csv" onchange="handleFileUpload('newvegas', this)">
+                            <label for="newvegas-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="newvegas-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="newvegas-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="newvegas-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="newvegas-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="newvegas-table-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="showdown" class="section">
+                <h2>🎯 쇼다운홀덤 오답률 분석</h2>
+                <div id="showdown-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="showdown-file" accept=".csv" onchange="handleFileUpload('showdown', this)">
+                            <label for="showdown-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="showdown-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="showdown-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="showdown-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="showdown-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="showdown-table-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="pc-integrated" class="section">
+                <h2>💻 PC 통합 챗봇 오답률 분석</h2>
+                <div id="pc-integrated-content">
+                    <div class="upload-section">
+                        <h3>📁 CSV 파일 업로드</h3>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="pc-integrated-file" accept=".csv" onchange="handleFileUpload('pc-integrated', this)">
+                            <label for="pc-integrated-file" class="file-input-label">
+                                📄 CSV 파일을 선택하거나 드래그하여 업로드하세요
+                            </label>
+                        </div>
+                    </div>
+                    <div id="pc-integrated-stats" style="display: none;">
+                        <div class="metric-cards">
+                            <div class="metric-card">
+                                <div class="label">오답률</div>
+                                <div class="number" id="pc-integrated-error-rate">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">질문 수</div>
+                                <div class="number" id="pc-integrated-total">-</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="label">오답 수</div>
+                                <div class="number" id="pc-integrated-errors">-</div>
+                            </div>
+                        </div>
+                        <div id="pc-integrated-table-container"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- 게임별 오답 항목 모달 -->
+    <div id="error-items-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-game-name">게임 오답 항목</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="error-items-list" style="max-height: 70vh; overflow-y: auto;">
+                    <!-- 오답 항목 리스트가 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 전역 데이터 저장
+        const gameData = {
+            'newmago': null,
+            'sutda': null,
+            'poker': null,
+            'newvegas': null,
+            'showdown': null,
+            'pc-integrated': null
+        };
+
+        // 탭 전환
+        document.querySelectorAll('.tab-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const tabId = this.getAttribute('data-tab');
+                
+                // 모든 탭 비활성화
+                document.querySelectorAll('.tab-link').forEach(l => l.classList.remove('active'));
+                document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+                
+                // 선택된 탭 활성화
+                this.classList.add('active');
+                document.getElementById(tabId).classList.add('active');
+                
+                // 대시보드면 통계 업데이트
+                if (tabId === 'dashboard') {
+                    updateDashboard();
+                }
+            });
+        });
+
+        // 파일 업로드 처리 (CSV 및 엑셀 지원)
+        function handleFileUpload(gameId, input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const fileName = file.name.toLowerCase();
+            const isExcelByExtension = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+            
+            // 파일 내용으로 실제 형식 감지 (확장자만으로 판단하지 않음)
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                // 엑셀 파일은 ZIP 형식으로 PK(0x50 0x4B)로 시작
+                const isExcelByContent = uint8Array.length >= 2 && 
+                                         uint8Array[0] === 0x50 && 
+                                         uint8Array[1] === 0x4B;
+                
+                // 확장자와 내용 모두 확인
+                const isExcel = isExcelByExtension || isExcelByContent;
+                
+                if (isExcel) {
+                    // 엑셀 파일 처리
+                    processExcelFile(gameId, arrayBuffer);
+                } else {
+                    // CSV 파일 처리
+                    const text = new TextDecoder('UTF-8').decode(uint8Array);
+                    processCSVFile(gameId, text);
+                }
+            };
+            
+            // ArrayBuffer로 읽어서 파일 형식 확인
+            reader.readAsArrayBuffer(file);
+        }
+        
+        // 엑셀 파일 처리 함수
+        function processExcelFile(gameId, arrayBuffer) {
+            try {
+                const data = new Uint8Array(arrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // JSON으로 변환 (헤더 포함)
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                
+                if (jsonData.length === 0) {
+                    alert('엑셀 파일에 데이터가 없습니다.');
+                    return;
+                }
+                
+                processFileData(gameId, jsonData);
+            } catch (error) {
+                console.error('엑셀 파일 읽기 오류:', error);
+                alert('엑셀 파일을 읽는 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+        
+        // CSV 파일 처리 함수
+        function processCSVFile(gameId, text) {
+            try {
+                // UTF-8 BOM 제거
+                if (text.charCodeAt(0) === 0xFEFF) {
+                    text = text.slice(1);
+                }
+                
+                console.log(`CSV 파싱 시도 (길이: ${text.length})`);
+                
+                // Papa.parse로 CSV 파싱
+                Papa.parse(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                    delimiter: '', // 자동 감지
+                    newline: '', // 자동 감지
+                    quoteChar: '"',
+                    escapeChar: '"',
+                    encoding: 'UTF-8',
+                    transform: function(value) {
+                        // 값이 있는 경우 그대로 반환 (인코딩 보존)
+                        if (value !== null && value !== undefined) {
+                            return String(value);
+                        }
+                        return '';
+                    },
+                    complete: function(results) {
+                        if (results.errors && results.errors.length > 0) {
+                            console.warn('CSV 파싱 경고:', results.errors);
+                            // 경고가 많아도 계속 진행
+                        }
+                        
+                        // 데이터 검증
+                        if (results.data && results.data.length > 0) {
+                            console.log(`CSV 파싱 성공: ${results.data.length}개 행`);
+                            console.log('컬럼명:', Object.keys(results.data[0]));
+                            console.log('첫 번째 행 샘플:', results.data[0]);
+                            
+                            // 빈 행 제거
+                            const filteredData = results.data.filter(row => {
+                                // 모든 값이 비어있지 않은 행만 유지
+                                return Object.values(row).some(val => val !== null && val !== undefined && String(val).trim() !== '');
+                            });
+                            
+                            console.log(`필터링 후: ${filteredData.length}개 행`);
+                            
+                            if (filteredData.length > 0) {
+                                processFileData(gameId, filteredData);
+                            } else {
+                                alert('CSV 파일에 유효한 데이터가 없습니다.');
+                            }
+                        } else {
+                            console.error('CSV 파싱 결과: 데이터가 없습니다');
+                            alert('CSV 파일에 데이터가 없거나 파싱에 실패했습니다.');
+                        }
+                    },
+                    error: function(error) {
+                        console.error('CSV 파싱 오류:', error);
+                        alert('CSV 파일을 읽는 중 오류가 발생했습니다: ' + error.message);
+                    }
+                });
+            } catch (error) {
+                console.error('CSV 파일 읽기 오류:', error);
+                alert('CSV 파일을 읽는 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // 파일 데이터 처리 (공통 함수)
+        function processFileData(gameId, data) {
+            if (!data || data.length === 0) {
+                alert('파일에 데이터가 없습니다.');
+                return;
+            }
+
+            console.log(`${gameId} 파일 처리 시작: 총 ${data.length}개 행`);
+            console.log('파일 데이터 샘플:', data[0]);
+            console.log('컬럼명:', Object.keys(data[0]));
+            
+            const headers = Object.keys(data[0]);
+            
+            // 모든 컬럼명 출력
+            console.log('전체 컬럼 목록:');
+            headers.forEach((h, i) => {
+                console.log(`  ${i}: ${h} = "${data[0] ? data[0][h] : ''}"`);
+            });
+            
+            // 컬럼명 매핑 (실제 컬럼명 사용)
+            // A=Id, B=UserKey, C=SessionKey, D=Language, E=QuestionType, F=Question, G=Answer, H=LlmAnswerType, I=IsContact, J=QuestionTime, K=AnswerTime
+            let questionCol = headers.find(h => h && h.trim() === 'Question') || null; // F열
+            let answerCol = headers.find(h => h && h.trim() === 'Answer') || null; // G열
+            let dateCol = headers.find(h => h && h.trim() === 'AnswerTime') || null; // K열
+            
+            // 대체 컬럼명 찾기 (대소문자 무시)
+            if (!questionCol) {
+                questionCol = headers.find(h => {
+                    if (!h) return false;
+                    const hLower = h.toLowerCase().trim();
+                    return hLower === 'question' || hLower.includes('question');
+                }) || null;
+            }
+            
+            if (!answerCol) {
+                answerCol = headers.find(h => {
+                    if (!h) return false;
+                    const hLower = h.toLowerCase().trim();
+                    return hLower === 'answer' || (hLower.includes('answer') && !hLower.includes('time'));
+                }) || null;
+            }
+            
+            if (!dateCol) {
+                dateCol = headers.find(h => {
+                    if (!h) return false;
+                    const hLower = h.toLowerCase().trim();
+                    return hLower === 'answertime' || hLower.includes('answertime');
+                }) || null;
+            }
+            
+            console.log('매핑된 컬럼:', { 
+                questionCol, 
+                answerCol, 
+                dateCol, 
+                questionValue: data[0] ? data[0][questionCol] : 'N/A',
+                answerValue: data[0] ? data[0][answerCol] : 'N/A',
+                dateValue: data[0] ? data[0][dateCol] : 'N/A'
+            });
+            
+            // 데이터 정규화 및 정답 여부 컬럼 추가
+            data.forEach((row, index) => {
+                // 질문과 답변 컬럼명 매핑
+                let questionValue = '';
+                let answerValue = '';
+                let dateValue = '';
+                
+                if (questionCol && row[questionCol] !== undefined && row[questionCol] !== null) {
+                    questionValue = String(row[questionCol] || '').trim();
+                } else {
+                    // 대체 컬럼명 시도
+                    questionValue = String(row['Question'] || row['질문'] || row['question'] || '').trim();
+                }
+                
+                if (answerCol && row[answerCol] !== undefined && row[answerCol] !== null) {
+                    answerValue = String(row[answerCol] || '').trim();
+                } else {
+                    // 대체 컬럼명 시도
+                    answerValue = String(row['Answer'] || row['답변'] || row['answer'] || '').trim();
+                }
+                
+                if (dateCol && row[dateCol] !== undefined && row[dateCol] !== null) {
+                    dateValue = String(row[dateCol] || '').trim();
+                } else {
+                    dateValue = String(row['AnswerTime'] || row['답변시간'] || row['answerTime'] || '').trim();
+                }
+                
+                row['Question'] = questionValue;
+                row['QuestionAnswer'] = answerValue;
+                
+                // 날짜 파싱 (K열 AnswerTime)
+                row['FormattedDate'] = formatDate(dateValue);
+                row['AnswerTime'] = dateValue; // 원본 날짜도 보관
+                
+                // 디버깅: 첫 번째 행만 로그 출력
+                if (index === 0) {
+                    console.log('첫 번째 행 데이터:', {
+                        questionCol,
+                        answerCol,
+                        dateCol,
+                        question: row['Question'],
+                        answer: row['QuestionAnswer'],
+                        date: row['FormattedDate'],
+                        rawRowKeys: Object.keys(row),
+                        rawRow: row
+                    });
+                }
+                
+                // 정답 여부 컬럼이 없으면 추가
+                if (!row['정답여부']) {
+                    row['정답여부'] = '';
+                }
+                // 분류유형 컬럼 추가 (기존 오답유형과 호환)
+                if (!row['분류유형']) {
+                    row['분류유형'] = row['오답유형'] || '';
+                }
+                if (!row['오답유형']) {
+                    row['오답유형'] = ''; // 기존 호환성 유지
+                }
+                
+                // ID는 인덱스 번호 사용
+                row['Id'] = index + 1;
+            });
+
+            console.log(`${gameId} 데이터 저장 완료: ${data.length}개 행`);
+            gameData[gameId] = data;
+            saveGameDataToStorage(gameId, data);
+            displayGameData(gameId, data);
+            updateDashboard();
+        }
+
+        // LocalStorage에 게임 데이터 저장
+        function saveGameDataToStorage(gameId, data) {
+            try {
+                const storageKey = `chatbot_error_analysis_${gameId}`;
+                localStorage.setItem(storageKey, JSON.stringify(data));
+                console.log(`${gameId} 데이터가 LocalStorage에 저장되었습니다.`);
+            } catch (error) {
+                console.error('LocalStorage 저장 오류:', error);
+                // LocalStorage 용량 초과 시 경고
+                if (error.name === 'QuotaExceededError') {
+                    alert('데이터가 너무 커서 저장할 수 없습니다. 일부 데이터만 저장됩니다.');
+                }
+            }
+        }
+
+        // LocalStorage에서 게임 데이터 복원
+        function loadGameDataFromStorage() {
+            const gameIds = ['newmago', 'sutda', 'poker', 'newvegas', 'showdown', 'pc-integrated'];
+            let hasData = false;
+
+            gameIds.forEach(gameId => {
+                try {
+                    const storageKey = `chatbot_error_analysis_${gameId}`;
+                    const savedData = localStorage.getItem(storageKey);
+                    
+                    if (savedData) {
+                        const data = JSON.parse(savedData);
+                        if (data && data.length > 0) {
+                            gameData[gameId] = data;
+                            displayGameData(gameId, data);
+                            hasData = true;
+                            console.log(`${gameId} 데이터가 LocalStorage에서 복원되었습니다. (${data.length}개 행)`);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`${gameId} 데이터 복원 오류:`, error);
+                }
+            });
+
+            if (hasData) {
+                updateDashboard();
+            }
+        }
+
+        // LocalStorage 데이터 초기화 (선택사항)
+        function clearAllStoredData() {
+            if (confirm('모든 저장된 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+                const gameIds = ['newmago', 'sutda', 'poker', 'newvegas', 'showdown', 'pc-integrated'];
+                gameIds.forEach(gameId => {
+                    const storageKey = `chatbot_error_analysis_${gameId}`;
+                    localStorage.removeItem(storageKey);
+                    gameData[gameId] = null;
+                });
+                location.reload();
+            }
+        }
+
+        // 날짜 형식 변환: "2025. 11. 27. 오후 10:03:36" -> "251127"
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            
+            // "2025. 11. 27. 오후 10:03:36" 형식 파싱
+            const match = dateStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+            if (match) {
+                const year = match[1].substring(2); // 2025 -> 25
+                const month = match[2].padStart(2, '0'); // 11 -> 11
+                const day = match[3].padStart(2, '0'); // 27 -> 27
+                return year + month + day; // 251127
+            }
+            
+            // 다른 형식 시도
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+                const year = date.getFullYear().toString().substring(2);
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                return year + month + day;
+            }
+            
+            return dateStr; // 파싱 실패 시 원본 반환
+        }
+
+        // HTML 이스케이프 함수
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        // 게임별 데이터 표시
+        function displayGameData(gameId, data) {
+            const statsDiv = document.getElementById(`${gameId}-stats`);
+            const tableContainer = document.getElementById(`${gameId}-table-container`);
+            
+            if (!statsDiv || !tableContainer) return;
+
+            // 통계 계산
+            const total = data.length;
+            const errors = data.filter(row => row['정답여부'] && row['정답여부'].toUpperCase() === 'X').length;
+            const errorRate = total > 0 ? ((errors / total) * 100).toFixed(2) : 0;
+
+            // 통계 표시
+            document.getElementById(`${gameId}-total`).textContent = total.toLocaleString();
+            document.getElementById(`${gameId}-errors`).textContent = errors.toLocaleString();
+            document.getElementById(`${gameId}-error-rate`).textContent = errorRate + '%';
+
+            console.log(`${gameId} 데이터 표시: 총 ${total}개 행`);
+
+            // 테이블 생성
+            let tableHTML = '<table class="data-table"><thead><tr>';
+            tableHTML += '<th>번호</th><th>질문</th><th>답변</th><th>정답여부</th><th>분류유형</th><th>날짜</th>';
+            tableHTML += '</tr></thead><tbody>';
+
+            data.forEach((row, index) => {
+                const correctness = row['정답여부'] || '';
+                const categoryType = row['분류유형'] || row['오답유형'] || ''; // 기존 데이터 호환성
+                const isCorrect = correctness.toUpperCase() === 'O';
+                const isError = correctness.toUpperCase() === 'X';
+                const question = escapeHtml(row['Question'] || '');
+                const answer = escapeHtml(row['QuestionAnswer'] || '');
+                const formattedDate = escapeHtml(row['FormattedDate'] || '');
+
+                tableHTML += '<tr>';
+                tableHTML += `<td>${index + 1}</td>`;
+                tableHTML += `<td style="max-width: 300px; word-wrap: break-word; white-space: normal; line-height: 1.5;">${question || '(질문 없음)'}</td>`;
+                tableHTML += `<td style="max-width: 300px; word-wrap: break-word; white-space: normal; line-height: 1.5;">${answer || '(답변 없음)'}</td>`;
+                tableHTML += `<td>
+                    <select class="error-type-select" onchange="updateCorrectness('${gameId}', ${index}, this.value, 'correctness')">
+                        <option value="">선택</option>
+                        <option value="O" ${correctness.toUpperCase() === 'O' ? 'selected' : ''}>O (정답)</option>
+                        <option value="X" ${correctness.toUpperCase() === 'X' ? 'selected' : ''}>X (오답)</option>
+                    </select>
+                </td>`;
+                tableHTML += `<td>
+                    <select class="error-type-select" onchange="updateCorrectness('${gameId}', ${index}, this.value, 'categoryType')" ${!correctness ? 'disabled' : ''}>
+                        <option value="">선택</option>`;
+                
+                // 정답일 때의 유형
+                if (isCorrect || !correctness) {
+                    tableHTML += `
+                        <option value="정상 답변" ${categoryType === '정상 답변' ? 'selected' : ''}>정상 답변</option>
+                        <option value="데이터 부족 (정상)" ${categoryType === '데이터 부족 (정상)' ? 'selected' : ''}>데이터 부족 (정상)</option>
+                        <option value="게임 외 질문 (정상)" ${categoryType === '게임 외 질문 (정상)' ? 'selected' : ''}>게임 외 질문 (정상)</option>`;
+                }
+                
+                // 오답일 때의 유형
+                if (isError || !correctness) {
+                    tableHTML += `
+                        <option value="사실 관계 오류" ${categoryType === '사실 관계 오류' ? 'selected' : ''}>사실 관계 오류</option>
+                        <option value="의도 파악 실패" ${categoryType === '의도 파악 실패' ? 'selected' : ''}>의도 파악 실패</option>
+                        <option value="동문서답/TMI" ${categoryType === '동문서답/TMI' ? 'selected' : ''}>동문서답/TMI</option>
+                        <option value="답변 불완전" ${categoryType === '답변 불완전' ? 'selected' : ''}>답변 불완전</option>
+                        <option value="기타" ${categoryType === '기타' ? 'selected' : ''}>기타</option>`;
+                }
+                
+                tableHTML += `
+                    </select>
+                </td>`;
+                tableHTML += `<td>${formattedDate}</td>`;
+                tableHTML += '</tr>';
+            });
+
+            tableHTML += '</tbody></table>';
+            tableContainer.innerHTML = tableHTML;
+            statsDiv.style.display = 'block';
+        }
+
+        // 정답 여부 업데이트
+        function updateCorrectness(gameId, index, value, type) {
+            if (!gameData[gameId]) return;
+
+            if (type === 'correctness') {
+                gameData[gameId][index]['정답여부'] = value;
+                
+                // 정답 여부가 변경되면 분류 유형 초기화 및 드롭다운 옵션 업데이트
+                gameData[gameId][index]['분류유형'] = '';
+                
+                // 테이블 다시 렌더링하여 드롭다운 옵션 업데이트
+                displayGameData(gameId, gameData[gameId]);
+            } else if (type === 'categoryType') {
+                gameData[gameId][index]['분류유형'] = value;
+                // 기존 호환성을 위해 오답유형도 업데이트 (오답일 때만)
+                if (gameData[gameId][index]['정답여부'].toUpperCase() === 'X') {
+                    gameData[gameId][index]['오답유형'] = value;
+                }
+            }
+
+            // LocalStorage에 저장
+            saveGameDataToStorage(gameId, gameData[gameId]);
+            
+            // 통계 재계산
+            displayGameData(gameId, gameData[gameId]);
+            updateDashboard();
+            
+            // 오답 유형별 확률 표시 업데이트
+            updateErrorTypeProbabilities(gameId);
+        }
+
+        // 오답 유형별 확률 계산 및 표시
+        function updateErrorTypeProbabilities(gameId) {
+            if (!gameData[gameId]) return;
+
+            const data = gameData[gameId];
+            const totalErrors = data.filter(row => row['정답여부'] && row['정답여부'].toUpperCase() === 'X').length;
+            
+            if (totalErrors === 0) return;
+
+            const errorTypes = {
+                '사실 관계 오류': 0,
+                '의도 파악 실패': 0,
+                '동문서답/TMI': 0,
+                '답변 불완전': 0,
+                '기타': 0
+            };
+
+            data.forEach(row => {
+                if (row['정답여부'] && row['정답여부'].toUpperCase() === 'X') {
+                    const categoryType = row['분류유형'] || row['오답유형'] || '';
+                    if (categoryType && errorTypes.hasOwnProperty(categoryType)) {
+                        errorTypes[categoryType]++;
+                    } else if (categoryType) {
+                        errorTypes['기타']++;
+                    }
+                }
+            });
+
+            // 오답 유형별 확률 표시 (게임별 섹션에 추가 가능)
+            console.log(`${gameId} 오답 유형별 확률:`, Object.keys(errorTypes).map(type => ({
+                type,
+                count: errorTypes[type],
+                probability: ((errorTypes[type] / totalErrors) * 100).toFixed(2) + '%'
+            })));
+        }
+
+        // 대시보드 업데이트
+        function updateDashboard() {
+            let totalQuestions = 0;
+            let totalErrors = 0;
+            const gameStats = {};
+
+            Object.keys(gameData).forEach(gameId => {
+                if (gameData[gameId]) {
+                    const total = gameData[gameId].length;
+                    const errors = gameData[gameId].filter(row => 
+                        row['정답여부'] && row['정답여부'].toUpperCase() === 'X'
+                    ).length;
+                    
+                    totalQuestions += total;
+                    totalErrors += errors;
+                    gameStats[gameId] = { total, errors };
+                }
+            });
+
+            const overallErrorRate = totalQuestions > 0 ? ((totalErrors / totalQuestions) * 100).toFixed(2) : 0;
+
+            document.getElementById('total-questions').textContent = totalQuestions.toLocaleString();
+            document.getElementById('total-errors').textContent = totalErrors.toLocaleString();
+            document.getElementById('overall-error-rate').textContent = overallErrorRate + '%';
+
+            // 게임별 통계 업데이트
+            const gameNames = {
+                'newmago': '뉴맞고',
+                'sutda': '섯다',
+                'poker': '포커',
+                'newvegas': '뉴베가스',
+                'showdown': '쇼다운홀덤',
+                'pc-integrated': 'PC 통합'
+            };
+
+            Object.keys(gameStats).forEach(gameId => {
+                const stats = gameStats[gameId];
+                const errorRate = stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(2) : '0.00';
+                
+                document.getElementById(`game-${gameId}-error-rate`).textContent = errorRate + '%';
+                document.getElementById(`game-${gameId}-total`).textContent = stats.total.toLocaleString();
+                document.getElementById(`game-${gameId}-errors`).textContent = stats.errors.toLocaleString();
+            });
+
+            // 데이터가 없는 게임은 '-' 표시
+            Object.keys(gameData).forEach(gameId => {
+                if (!gameStats[gameId]) {
+                    document.getElementById(`game-${gameId}-error-rate`).textContent = '-';
+                    document.getElementById(`game-${gameId}-total`).textContent = '-';
+                    document.getElementById(`game-${gameId}-errors`).textContent = '-';
+                }
+            });
+
+            // 차트 업데이트 (간단한 예시)
+            updateCharts(gameStats);
+        }
+
+        // 차트 업데이트
+        function updateCharts(gameStats) {
+            const gameNames = {
+                'newmago': '뉴맞고',
+                'sutda': '섯다',
+                'poker': '포커',
+                'newvegas': '뉴베가스',
+                'showdown': '쇼다운홀덤',
+                'pc-integrated': 'PC 통합'
+            };
+
+            // 모든 데이터 수집
+            let allData = [];
+            Object.keys(gameData).forEach(gameId => {
+                if (gameData[gameId]) {
+                    gameData[gameId].forEach(row => {
+                        // Question과 QuestionAnswer 정규화
+                        const normalizedRow = {
+                            ...row,
+                            Question: row['Question'] || row['질문'] || row['question'] || '',
+                            QuestionAnswer: row['QuestionAnswer'] || row['답변'] || row['answer'] || row['Answer'] || '',
+                            QuestionTime: row['QuestionTime'] || row['AnswerTime'] || row['답변시간'] || row['answerTime'] || '',
+                            gameId: gameId,
+                            gameName: gameNames[gameId] || gameId
+                        };
+                        allData.push(normalizedRow);
+                    });
+                }
+            });
+
+            // 월별 오답률 차트
+            updateMonthlyChart(allData);
+
+            // 오답 유형별 분포 차트
+            updateErrorTypeChart(allData);
+
+            // 게임별 비교 차트
+            updateGameComparisonChart(gameStats, gameNames);
+
+            // 일자별 오답률 차트
+            updateDailyChart(allData);
+        }
+
+        // 일자별 오답률 차트
+        function updateDailyChart(allData) {
+            const ctx = document.getElementById('daily-chart');
+            if (!ctx || allData.length === 0) return;
+
+            // 날짜별로 그룹화 (FormattedDate 우선 사용)
+            const dailyStats = {};
+            allData.forEach(row => {
+                let date = row['FormattedDate'] || '';
+                if (!date && row['AnswerTime']) {
+                    // FormattedDate가 없으면 AnswerTime에서 추출
+                    date = formatDate(row['AnswerTime']);
+                }
+                if (!date) {
+                    date = '날짜 없음';
+                }
+                
+                if (!dailyStats[date]) {
+                    dailyStats[date] = { total: 0, errors: 0 };
+                }
+                dailyStats[date].total++;
+                if (row['정답여부'] && row['정답여부'].toUpperCase() === 'X') {
+                    dailyStats[date].errors++;
+                }
+            });
+
+            // 날짜 정렬 (YYMMDD 형식이므로 문자열 정렬로도 시간순 정렬됨)
+            const dates = Object.keys(dailyStats).filter(d => d !== '날짜 없음').sort();
+            if (dailyStats['날짜 없음']) {
+                dates.push('날짜 없음'); // 날짜 없음은 마지막에
+            }
+            
+            // 날짜 레이블 포맷팅 (YYMMDD -> YY/MM/DD)
+            const formattedDates = dates.map(date => {
+                if (date === '날짜 없음') return date;
+                if (date.length >= 6) {
+                    const year = date.substring(0, 2);
+                    const month = date.substring(2, 4);
+                    const day = date.substring(4, 6);
+                    return `${year}/${month}/${day}`;
+                }
+                return date;
+            });
+            
+            const errorRates = dates.map(date => {
+                const stats = dailyStats[date];
+                return parseFloat(stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(2) : 0);
+            });
+
+            // 데이터가 없으면 차트 생성 안 함
+            if (dates.length === 0 || errorRates.length === 0) {
+                if (window.dailyChart) {
+                    window.dailyChart.destroy();
+                    window.dailyChart = null;
+                }
+                return;
+            }
+
+            // y축 범위 동적 계산 (최대값의 1.5배 또는 최소 5% 범위)
+            const maxRate = Math.max(...errorRates, 0);
+            const minRate = Math.min(...errorRates.filter(r => r > 0), 0);
+            const range = maxRate - minRate;
+            let yMax = Math.max(maxRate * 1.5, 5); // 최소 5% 범위 보장
+            if (maxRate > 0 && maxRate < 1) {
+                yMax = Math.max(maxRate * 2, 1); // 1% 미만일 때는 2배 또는 최소 1%
+            }
+            const yMin = Math.max(0, minRate - (range * 0.2)); // 하한선은 최소값의 20% 여유
+
+            // 기존 차트가 있으면 제거
+            if (window.dailyChart) {
+                window.dailyChart.destroy();
+                window.dailyChart = null;
+            }
+            // Chart.js의 getChart로도 확인
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) {
+                existingChart.destroy();
+            }
+
+            const chartConfig = {
+                type: 'line',
+                data: {
+                    labels: formattedDates,
+                    datasets: [{
+                        label: '일자별 오답률 (%)',
+                        data: errorRates,
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: yMin,
+                            max: yMax,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(2) + '%';
+                                },
+                                stepSize: yMax > 10 ? 5 : (yMax > 1 ? 0.5 : 0.1) // 범위에 따라 스텝 크기 조정
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '오답률: ' + context.parsed.y.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // ChartDataLabels 플러그인이 로드되어 있으면 추가
+            if (typeof ChartDataLabels !== 'undefined') {
+                chartConfig.plugins = [ChartDataLabels];
+                chartConfig.options.plugins.datalabels = {
+                    display: function(context) {
+                        return context.parsed && context.parsed.y !== undefined && context.parsed.y > 0;
+                    },
+                    color: '#333',
+                    font: {
+                        weight: 'bold',
+                        size: 10
+                    },
+                    formatter: function(value, context) {
+                        if (value !== undefined && !isNaN(value)) {
+                            return value.toFixed(2) + '%';
+                        }
+                        return '';
+                    },
+                    anchor: 'end',
+                    align: 'top',
+                    offset: 5
+                };
+            }
+            
+            try {
+                window.dailyChart = new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('일자별 차트 생성 오류:', error);
+            }
+        }
+
+        // YYMMDD 형식을 "YY년 MM월" 형식으로 변환
+        function formatMonthLabel(dateStr) {
+            if (!dateStr || dateStr.length < 6) return dateStr;
+            
+            // YYMMDD 형식 파싱 (예: 251127 -> 25년 11월)
+            const year = dateStr.substring(0, 2);
+            const month = dateStr.substring(2, 4);
+            
+            // 월이 00이거나 유효하지 않으면 원본 반환
+            if (month === '00' || parseInt(month) < 1 || parseInt(month) > 12) {
+                return dateStr;
+            }
+            
+            return `${year}년 ${parseInt(month)}월`;
+        }
+
+        // 월별 오답률 차트
+        function updateMonthlyChart(allData) {
+            const ctx = document.getElementById('monthly-chart');
+            if (!ctx || allData.length === 0) return;
+
+            // 월별로 그룹화 (FormattedDate 사용: YYMMDD 형식)
+            const monthlyStats = {};
+            allData.forEach(row => {
+                let dateStr = row['FormattedDate'] || '';
+                if (!dateStr && row['AnswerTime']) {
+                    dateStr = formatDate(row['AnswerTime']);
+                }
+                
+                if (dateStr && dateStr.length >= 6) {
+                    // YYMMDD 형식에서 YYMM 추출 (예: 251127 -> 2511)
+                    const monthKey = dateStr.substring(0, 4); // YYMM
+                    
+                    if (!monthlyStats[monthKey]) {
+                        monthlyStats[monthKey] = { total: 0, errors: 0 };
+                    }
+                    monthlyStats[monthKey].total++;
+                    if (row['정답여부'] && row['정답여부'].toUpperCase() === 'X') {
+                        monthlyStats[monthKey].errors++;
+                    }
+                }
+            });
+
+            // 월 키를 정렬 (YYMM 형식이므로 문자열 정렬로도 시간순 정렬됨)
+            const monthKeys = Object.keys(monthlyStats).sort();
+            const months = monthKeys.map(key => formatMonthLabel(key + '01')); // YYMM -> YYMMDD로 변환하여 포맷팅
+            const errorRates = monthKeys.map(key => {
+                const stats = monthlyStats[key];
+                return parseFloat(stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(2) : 0);
+            });
+
+            // 데이터가 없으면 차트 생성 안 함
+            if (monthKeys.length === 0 || errorRates.length === 0) {
+                if (window.monthlyChart) {
+                    window.monthlyChart.destroy();
+                    window.monthlyChart = null;
+                }
+                return;
+            }
+
+            // y축 범위 동적 계산 (최대값의 1.5배 또는 최소 5% 범위)
+            const maxRate = Math.max(...errorRates, 0);
+            const minRate = Math.min(...errorRates.filter(r => r > 0), 0);
+            const range = maxRate - minRate;
+            let yMax = Math.max(maxRate * 1.5, 5); // 최소 5% 범위 보장
+            if (maxRate > 0 && maxRate < 1) {
+                yMax = Math.max(maxRate * 2, 1); // 1% 미만일 때는 2배 또는 최소 1%
+            }
+            const yMin = Math.max(0, minRate - (range * 0.2)); // 하한선은 최소값의 20% 여유
+
+            // 기존 차트가 있으면 제거
+            if (window.monthlyChart) {
+                window.monthlyChart.destroy();
+                window.monthlyChart = null;
+            }
+            // Chart.js의 getChart로도 확인
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) {
+                existingChart.destroy();
+            }
+
+            const chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: '월별 오답률 (%)',
+                        data: errorRates,
+                        backgroundColor: 'rgba(118, 75, 162, 0.6)',
+                        borderColor: 'rgba(118, 75, 162, 1)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: yMin,
+                            max: yMax,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(2) + '%';
+                                },
+                                stepSize: yMax > 10 ? 5 : (yMax > 1 ? 0.5 : 0.1) // 범위에 따라 스텝 크기 조정
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '오답률: ' + context.parsed.y.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // ChartDataLabels 플러그인이 로드되어 있으면 추가
+            if (typeof ChartDataLabels !== 'undefined') {
+                chartConfig.plugins = [ChartDataLabels];
+                chartConfig.options.plugins.datalabels = {
+                    display: function(context) {
+                        return context.parsed && context.parsed.y !== undefined && context.parsed.y > 0;
+                    },
+                    color: '#333',
+                    font: {
+                        weight: 'bold',
+                        size: 10
+                    },
+                    formatter: function(value, context) {
+                        if (value !== undefined && !isNaN(value)) {
+                            return value.toFixed(2) + '%';
+                        }
+                        return '';
+                    },
+                    anchor: 'end',
+                    align: 'top',
+                    offset: 5
+                };
+            }
+            
+            try {
+                window.monthlyChart = new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('월별 차트 생성 오류:', error);
+            }
+        }
+
+        // 게임별 비교 차트
+        function updateGameComparisonChart(gameStats, gameNames) {
+            const ctx = document.getElementById('game-comparison-chart');
+            if (!ctx) return;
+
+            const labels = [];
+            const errorRates = [];
+            const gameStatsArray = []; // 건수 정보를 저장할 배열
+
+            Object.keys(gameStats).forEach(gameId => {
+                if (gameStats[gameId].total > 0) { // 데이터가 있는 게임만 표시
+                    labels.push(gameNames[gameId] || gameId);
+                    const rate = ((gameStats[gameId].errors / gameStats[gameId].total) * 100).toFixed(2);
+                    errorRates.push(parseFloat(rate));
+                    // 건수 정보 저장 (오답 수 / 전체 수)
+                    gameStatsArray.push({
+                        errors: gameStats[gameId].errors,
+                        total: gameStats[gameId].total
+                    });
+                }
+            });
+
+            if (labels.length === 0) return; // 데이터가 없으면 차트 생성 안 함
+
+            // y축 범위 동적 계산
+            const maxRate = Math.max(...errorRates, 0);
+            const minRate = Math.min(...errorRates.filter(r => r > 0), 0);
+            let yMax = Math.max(maxRate * 1.5, 5); // 최소 5% 범위 보장
+            if (maxRate > 0 && maxRate < 1) {
+                yMax = Math.max(maxRate * 2, 1); // 1% 미만일 때는 2배 또는 최소 1%
+            }
+            const yMin = Math.max(0, minRate - ((maxRate - minRate) * 0.2));
+
+            // 기존 차트가 있으면 제거
+            if (window.gameComparisonChart) {
+                window.gameComparisonChart.destroy();
+                window.gameComparisonChart = null;
+            }
+            // Chart.js의 getChart로도 확인
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) {
+                existingChart.destroy();
+            }
+
+            const chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '오답률 (%)',
+                        data: errorRates,
+                        backgroundColor: 'rgba(102, 126, 234, 0.6)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: yMin,
+                            max: yMax,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(2) + '%';
+                                },
+                                stepSize: yMax > 10 ? 5 : (yMax > 1 ? 0.5 : 0.1) // 범위에 따라 스텝 크기 조정
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const index = context.dataIndex;
+                                    const stats = gameStatsArray[index];
+                                    if (stats) {
+                                        return '오답률: ' + context.parsed.y.toFixed(2) + '% (' + stats.errors + '/' + stats.total + '건)';
+                                    }
+                                    return '오답률: ' + context.parsed.y.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // ChartDataLabels 플러그인이 로드되어 있으면 추가
+            if (typeof ChartDataLabels !== 'undefined') {
+                chartConfig.plugins = [ChartDataLabels];
+                chartConfig.options.plugins.datalabels = {
+                    display: function(context) {
+                        return context.parsed && context.parsed.y !== undefined && context.parsed.y > 0;
+                    },
+                    color: '#333',
+                    font: {
+                        weight: 'bold',
+                        size: 10
+                    },
+                    formatter: function(value, context) {
+                        if (value !== undefined && !isNaN(value)) {
+                            const index = context.dataIndex;
+                            const stats = gameStatsArray[index];
+                            if (stats) {
+                                // 퍼센트와 건수 함께 표시
+                                return value.toFixed(2) + '%\n(' + stats.errors + '/' + stats.total + ')';
+                            }
+                            return value.toFixed(2) + '%';
+                        }
+                        return '';
+                    },
+                    anchor: 'end',
+                    align: 'top',
+                    offset: 5
+                };
+            }
+            
+            try {
+                window.gameComparisonChart = new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('게임별 비교 차트 생성 오류:', error);
+            }
+        }
+
+        // 오답 유형별 분포 차트
+        function updateErrorTypeChart(allData) {
+            const ctx = document.getElementById('error-type-chart');
+            if (!ctx || allData.length === 0) return;
+
+            const errorTypeCounts = {
+                '사실 관계 오류': 0,
+                '의도 파악 실패': 0,
+                '동문서답/TMI': 0,
+                '답변 불완전': 0,
+                '기타': 0
+            };
+
+            allData.forEach(row => {
+                if (row['정답여부'] && row['정답여부'].toUpperCase() === 'X') {
+                    const categoryType = row['분류유형'] || row['오답유형'] || '';
+                    if (categoryType && errorTypeCounts.hasOwnProperty(categoryType)) {
+                        errorTypeCounts[categoryType]++;
+                    } else if (categoryType) {
+                        errorTypeCounts['기타']++;
+                    }
+                }
+            });
+
+            const totalErrors = Object.values(errorTypeCounts).reduce((a, b) => a + b, 0);
+            if (totalErrors === 0) return;
+
+            if (window.errorTypeChart) {
+                window.errorTypeChart.destroy();
+            }
+
+            const labels = Object.keys(errorTypeCounts);
+            const values = Object.values(errorTypeCounts);
+            
+            // 색상 배열 확장 (5개 항목에 맞춤)
+            const backgroundColors = [
+                'rgba(102, 126, 234, 0.8)',
+                'rgba(118, 75, 162, 0.8)',
+                'rgba(255, 159, 64, 0.8)',
+                'rgba(75, 192, 192, 0.8)',
+                'rgba(255, 99, 132, 0.8)'
+            ];
+            const borderColors = [
+                'rgba(102, 126, 234, 1)',
+                'rgba(118, 75, 162, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(255, 99, 132, 1)'
+            ];
+
+            const chartConfig = {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: backgroundColors.slice(0, labels.length),
+                        borderColor: borderColors.slice(0, labels.length),
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const percentage = totalErrors > 0 ? ((value / totalErrors) * 100).toFixed(1) : 0;
+                                    return label + ': ' + value + '건 (' + percentage + '%)';
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: function(context) {
+                                // 값이 0이 아닌 경우에만 표시
+                                return context.dataset.data[context.dataIndex] > 0;
+                            },
+                            color: '#333',
+                            font: {
+                                weight: 'bold',
+                                size: 11
+                            },
+                            formatter: function(value, context) {
+                                const label = context.chart.data.labels[context.dataIndex];
+                                const percentage = totalErrors > 0 ? ((value / totalErrors) * 100).toFixed(1) : 0;
+                                return label + '\n' + value + '건\n(' + percentage + '%)';
+                            },
+                            textAlign: 'center',
+                            padding: 4
+                        }
+                    }
+                }
+            };
+            
+            // ChartDataLabels 플러그인이 로드되어 있으면 추가
+            if (typeof ChartDataLabels !== 'undefined') {
+                chartConfig.plugins = [ChartDataLabels];
+            }
+            
+            try {
+                window.errorTypeChart = new Chart(ctx, chartConfig);
+            } catch (error) {
+                console.error('오답 유형별 분포 차트 생성 오류:', error);
+            }
+        }
+
+        // 게임별 오답 항목 표시
+        function showErrorItems(gameId, gameName) {
+            if (!gameData[gameId] || gameData[gameId].length === 0) {
+                alert('해당 게임의 데이터가 없습니다.');
+                return;
+            }
+
+            // 오답 항목 필터링
+            const errorItems = gameData[gameId].filter(row => 
+                row['정답여부'] && row['정답여부'].toUpperCase() === 'X'
+            );
+
+            if (errorItems.length === 0) {
+                alert('오답 항목이 없습니다.');
+                return;
+            }
+
+            // 모달 제목 설정
+            document.getElementById('modal-game-name').textContent = `${gameName} 오답 항목 (${errorItems.length}건)`;
+
+            // 오답 항목 리스트 생성
+            const listContainer = document.getElementById('error-items-list');
+            listContainer.innerHTML = '';
+
+            errorItems.forEach((item, index) => {
+                const question = item['Question'] || item['질문'] || item['question'] || '(질문 없음)';
+                const answer = item['QuestionAnswer'] || item['답변'] || item['answer'] || item['Answer'] || '(답변 없음)';
+                const categoryType = item['분류유형'] || item['오답유형'] || '미분류';
+                const formattedDate = item['FormattedDate'] || '';
+                
+                // 날짜 포맷팅
+                let dateDisplay = '';
+                if (formattedDate && formattedDate.length >= 6) {
+                    const year = formattedDate.substring(0, 2);
+                    const month = formattedDate.substring(2, 4);
+                    const day = formattedDate.substring(4, 6);
+                    dateDisplay = `${year}/${month}/${day}`;
+                }
+
+                const itemCard = document.createElement('div');
+                itemCard.className = 'error-item-card';
+                itemCard.innerHTML = `
+                    <div class="error-item-header">
+                        <span class="error-item-number">#${index + 1}</span>
+                        <span class="error-item-category">${categoryType}</span>
+                    </div>
+                    <div class="error-item-question">${question}</div>
+                    <div class="error-item-answer">${answer}</div>
+                    ${dateDisplay ? `<div class="error-item-date">📅 ${dateDisplay}</div>` : ''}
+                `;
+                listContainer.appendChild(itemCard);
+            });
+
+            // 모달 표시
+            const modal = document.getElementById('error-items-modal');
+            modal.style.display = 'block';
+        }
+
+        // 모달 닫기
+        function closeErrorItemsModal() {
+            const modal = document.getElementById('error-items-modal');
+            modal.style.display = 'none';
+        }
+
+        // 모달 외부 클릭 시 닫기
+        window.onclick = function(event) {
+            const modal = document.getElementById('error-items-modal');
+            if (event.target === modal) {
+                closeErrorItemsModal();
+            }
+        }
+
+        // GitHub에서 CSV 파일 자동 로드 (선택사항)
+        async function loadCSVFromGitHub(gameId, csvPath) {
+            try {
+                const response = await fetch(csvPath);
+                if (!response.ok) {
+                    console.log(`CSV 파일을 찾을 수 없습니다: ${csvPath}`);
+                    return false;
+                }
+                const text = await response.text();
+                
+                // UTF-8 BOM 제거
+                if (text.charCodeAt(0) === 0xFEFF) {
+                    text = text.slice(1);
+                }
+                
+                // Papa.parse로 CSV 파싱 (개선된 옵션)
+                Papa.parse(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                    encoding: 'UTF-8',
+                    delimiter: '', // 자동 감지
+                    newline: '', // 자동 감지
+                    quoteChar: '"',
+                    escapeChar: '"',
+                    transform: function(value) {
+                        // 빈 값이 아닌 경우에만 trim (공백만 있는 경우도 유지)
+                        if (value && typeof value === 'string') {
+                            return value;
+                        }
+                        return value || '';
+                    },
+                    complete: function(results) {
+                        if (results.errors && results.errors.length > 0) {
+                            console.warn(`${gameId} CSV 파싱 경고:`, results.errors);
+                        }
+                        if (results.data && results.data.length > 0) {
+                            processFileData(gameId, results.data);
+                            console.log(`${gameId} CSV 파일 로드 완료: ${results.data.length}개 행`);
+                        }
+                    },
+                    error: function(error) {
+                        console.log(`${gameId} CSV 파싱 오류:`, error);
+                    }
+                });
+                
+                return true;
+            } catch (error) {
+                console.log(`CSV 로드 실패 (${gameId}):`, error);
+                return false;
+            }
+        }
+
+        // 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            // LocalStorage에서 데이터 복원
+            loadGameDataFromStorage();
+            
+            // GitHub Pages에서 CSV 파일 자동 로드 시도 (선택사항)
+            // CSV 파일명 매핑 (gameId -> 실제 파일명)
+            const csvFileMapping = {
+                'newmago': 'newmatgo.csv',
+                'sutda': 'sudda.csv',
+                'poker': 'poker.csv',
+                'newvegas': 'newvegas.csv',
+                'showdown': 'holdem.csv',
+                'pc-integrated': 'pc.csv'
+            };
+            
+            const gameIds = ['newmago', 'sutda', 'poker', 'newvegas', 'showdown', 'pc-integrated'];
+            const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) || '';
+            
+            // LocalStorage에 데이터가 없으면 GitHub에서 CSV 로드 시도
+            let hasLocalData = false;
+            Object.keys(gameData).forEach(gameId => {
+                if (gameData[gameId] && gameData[gameId].length > 0) {
+                    hasLocalData = true;
+                }
+            });
+            
+            // LocalStorage에 데이터가 없고, GitHub Pages 환경이면 CSV 자동 로드 시도
+            if (!hasLocalData && (window.location.hostname === 'github.io' || window.location.hostname.includes('github'))) {
+                console.log('GitHub Pages 환경에서 CSV 파일 자동 로드 시도...');
+                gameIds.forEach(gameId => {
+                    const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
+                    const csvPath = `${basePath}/data/${csvFileName}`;
+                    loadCSVFromGitHub(gameId, csvPath);
+                });
+            }
+            
+            // 대시보드 업데이트 (데이터 복원 후 자동으로 호출되지만 안전을 위해)
+            setTimeout(() => {
+                updateDashboard();
+            }, 500); // CSV 로드 대기 시간
+
+            // 모달 닫기 버튼 이벤트
+            const closeBtn = document.querySelector('.modal-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', closeErrorItemsModal);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -2264,12 +2264,14 @@
         // GitHub에서 CSV 파일 자동 로드 (선택사항)
         async function loadCSVFromGitHub(gameId, csvPath) {
             try {
+                console.log(`[${gameId}] CSV 파일 요청: ${csvPath}`);
                 const response = await fetch(csvPath);
                 if (!response.ok) {
-                    console.log(`CSV 파일을 찾을 수 없습니다: ${csvPath}`);
+                    console.error(`[${gameId}] CSV 파일을 찾을 수 없습니다: ${csvPath} (상태: ${response.status})`);
                     return false;
                 }
                 const text = await response.text();
+                console.log(`[${gameId}] CSV 파일 다운로드 완료: ${text.length} bytes`);
                 
                 // UTF-8 BOM 제거
                 if (text.charCodeAt(0) === 0xFEFF) {
@@ -2325,49 +2327,36 @@
             
             // GitHub Pages에서 CSV 파일 자동 로드 시도 (선택사항)
             // CSV 파일명 매핑 (gameId -> 실제 파일명)
+            // GitHub에 업로드된 실제 파일명과 일치해야 함
             const csvFileMapping = {
                 'newmago': 'newmatgo.csv',
                 'sutda': 'sudda.csv',
                 'poker': 'poker.csv',
                 'newvegas': 'newvegas.csv',
                 'showdown': 'holdem.csv',
-                'pc-integrated': 'pc.csv'
+                'pc-integrated': 'PC.csv'  // 대문자 PC.csv로 수정
             };
             
             const gameIds = ['newmago', 'sutda', 'poker', 'newvegas', 'showdown', 'pc-integrated'];
             const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) || '';
             
-            // GitHub Pages 환경이면 항상 CSV 파일 로드 시도 (LocalStorage보다 우선)
+            // GitHub Pages 환경이면 항상 CSV 파일 로드 (LocalStorage 무시)
             if (window.location.hostname === 'github.io' || window.location.hostname.includes('github')) {
-                console.log('GitHub Pages 환경에서 CSV 파일 자동 로드 시도...');
+                console.log('GitHub Pages 환경 감지 - CSV 파일 자동 로드 시작...');
                 
-                // LocalStorage 데이터 검증 (질문/답변이 있는지 확인)
-                let hasValidData = false;
-                Object.keys(gameData).forEach(gameId => {
-                    if (gameData[gameId] && gameData[gameId].length > 0) {
-                        // 첫 번째 행에 질문이나 답변이 있는지 확인
-                        const firstRow = gameData[gameId][0];
-                        const hasQuestion = firstRow['Question'] && firstRow['Question'].trim() !== '';
-                        const hasAnswer = firstRow['QuestionAnswer'] && firstRow['QuestionAnswer'].trim() !== '';
-                        if (!hasQuestion && !hasAnswer) {
-                            console.log(`${gameId}: LocalStorage 데이터에 질문/답변이 없어서 CSV 재로드`);
-                            gameData[gameId] = null; // 잘못된 데이터 제거
-                        } else {
-                            hasValidData = true;
-                        }
-                    }
-                });
-                
-                // 유효한 데이터가 없거나, GitHub Pages 환경이면 CSV 로드
-                if (!hasValidData) {
-                    gameIds.forEach(gameId => {
-                        const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
-                        // CSV 파일이 index.html과 같은 루트 디렉토리에 있음
-                        const csvPath = `${basePath}/${csvFileName}`;
-                        console.log(`CSV 로드 시도: ${csvPath}`);
+                // GitHub Pages에서는 LocalStorage를 무시하고 항상 CSV 로드
+                // (다른 사용자는 LocalStorage가 비어있으므로)
+                gameIds.forEach((gameId, index) => {
+                    const csvFileName = csvFileMapping[gameId] || `${gameId}.csv`;
+                    // CSV 파일이 index.html과 같은 루트 디렉토리에 있음
+                    const csvPath = `${basePath}/${csvFileName}`;
+                    console.log(`[${index + 1}/${gameIds.length}] CSV 로드 시도: ${csvPath}`);
+                    
+                    // 각 파일을 순차적으로 로드 (약간의 딜레이를 두어 서버 부하 방지)
+                    setTimeout(() => {
                         loadCSVFromGitHub(gameId, csvPath);
-                    });
-                }
+                    }, index * 200); // 200ms 간격으로 로드
+                });
             }
             
             // 대시보드 업데이트 (데이터 복원 후 자동으로 호출되지만 안전을 위해)
